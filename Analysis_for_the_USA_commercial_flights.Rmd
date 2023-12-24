@@ -1,0 +1,490 @@
+---
+title: "ST2195 Coursework Project"
+author: "Yu Jiuru (210499438)"
+date: "09/03/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("D:/yjr/coursework")
+```
+
+# Data analysis of the USA commercial flights arrival and departure details from 2003 to 2004
+
+### Preamble: overview of the dataset
+
+First, I load libraries will be used.
+
+```{r}
+library(dplyr)
+library(scales)
+library(ggplot2)
+library(lubridate)
+library(ggthemes)
+library(RColorBrewer)
+library(plotly)
+
+#install.packages("sparklyr")
+library(sparklyr)
+#install.packages("maps")
+library(maps)
+#install.packages("geosphere")
+library(geosphere)
+```
+
+Second, I load the 2003-2004 flights .csv files downloaded from the Harvard Dataverse.
+
+```{r}
+flight_2003 <- read.csv("C:/Users/Administrator/Desktop/2003.csv",sep=",",header=TRUE)
+flight_2004 <- read.csv("C:/Users/Administrator/Desktop/2004.csv",sep=",",header=TRUE)
+
+#Use the rbind() function to merge the 2 dataframes.
+main_df <- rbind(flight_2003,flight_2004,all=TRUE)
+```
+
+Third, I load the plane-data and airports .csv files downloaded from the Harvard Dataverse.
+
+```{r}
+planes <- read.csv("C:/Users/Administrator/Desktop/plane-data.csv",sep=",",header=TRUE)
+airports <- read.csv("C:/Users/Administrator/Desktop/airports.csv",sep=",",header=TRUE)
+
+#Use the left_join() function to combine the dataframes. 
+main_df <- left_join(x=main_df, y=planes[ , c("tailnum", "year")], by = c('TailNum'='tailnum'), all.x=TRUE)
+main_df <- left_join(x=main_df, y=airports[ , c("iata", "airport", "lat", "long")], by = c('Origin'='iata'), all.x=TRUE)
+
+#Finally, I get the complete dataframe "main_df" that contains all the data I need to use for analysis.Let's have an overview of the dataframe.
+main_df
+```
+
+### 1. The best time to fly to minimise delays
+I create a new dataframe "main_df1" to filter the data I need. 
+The reason why I filter ArrDelay>0 and DepDelay>0 is that I only need the data that the flights are delayed. From the dataframe, we can easily find that number bigger than zero means the flights were delayed, while smaller than zero means the flights departure ahead of the time. 
+```{r}
+main_df1 <- filter(main_df, ArrDelay > 0)
+main_df1 <- filter(main_df1, TailNum > 0)
+main_df1 <- filter(main_df1, DepDelay > 0)
+```
+
+#### 1.1 Analysis of the best time of day for the airlines to fly to minimise delays
+To analyse the best time of the day for minimizing the flight delays, I find it's more convenient to classify the time by hour(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24).
+By constructing a heatmap, I get the DepDelay relationship between Day of the week and hour of the day.
+There's one point that I need to mention about, if you look at the heatmap, you may find there are hour beyond the realistic within a day, like "0", 25", "26", "27". Therefore, I construct another heatmap to check where the error occurs. 
+```{r}
+main_df1$hour <- trunc(main_df1$DepTime/100)
+
+flighthour_df <- main_df1 %>%
+  select(hour, DepDelay, DayOfWeek) %>%
+  group_by(hour, DayOfWeek) %>%
+  dplyr::summarise(tot_DepDelay = sum(DepDelay)/60, 
+            delaycount = length(hour), .groups = 'keep') %>%
+  data.frame()
+
+breaks <- c(seq(0, max(flighthour_df$delaycount), by=1000))
+
+yticks <- c(seq(0, max(flighthour_df$hour), by=1))
+
+ggplot(flighthour_df, aes(x = DayOfWeek, y = hour, fill=delaycount)) + 
+  geom_tile(na.rm=TRUE, color="black") + 
+  geom_text(aes(label=(round(delaycount, 0))), size=3) + 
+  labs(title="Heatmap: Flight Delays by Day of Week by Hour within a Day (2003 - 2004)", x = "Day of Week", y = "Hour of the day", fill = "Delay Count") + 
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_fill_continuous(low="white", high="blue", breaks=breaks) + 
+  guides(fill = guide_legend(reverse = TRUE, override.aes=list(colour="black"))) + 
+  scale_y_continuous(breaks = yticks)
+```
+
+From the above heatmap, it is easily to conclude that at 4a.m., the number of DepDelay minimizes though it could be influenced by the number of flights.
+By making the heatmap for Unique Carrier and Hour of the day, we can find that Carrier EV has some error data.
+```{r}
+main_df1$hour <- trunc(main_df1$DepTime/100)
+
+flighthour_df <- main_df1 %>%
+  select(hour, DepDelay, UniqueCarrier) %>%
+  group_by(hour, UniqueCarrier) %>%
+  dplyr::summarise(tot_ArrDelay = sum(DepDelay)/60, 
+            delaycount = length(hour), .groups = 'keep') %>%
+  data.frame()
+
+breaks <- c(seq(0, max(flighthour_df$delaycount), by=1000))
+
+yticks <- c(seq(0, max(flighthour_df$hour), by=1))
+
+ggplot(flighthour_df, aes(x = UniqueCarrier, y = hour, fill=delaycount)) + 
+  geom_tile(na.rm=TRUE, color="black") + 
+  geom_text(aes(label=(round(delaycount, 0))), size=3) + 
+  labs(title="Heatmap: Flight Delays by Carrier by Hour of the Day (2003 - 2004)", x = "Unique Carrier", y = "Hour of the day", fill = "Delay Count") + 
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_fill_continuous(low="white", high="blue", breaks=breaks) + 
+  guides(fill = guide_legend(reverse = TRUE, override.aes=list(colour="black"))) + 
+  scale_y_continuous(breaks = yticks)
+```
+
+Besides, I make a donut chart to reveal the total delays of flights by time of the day. And it's easily to find that during early morning, the number of flight delays minimize.
+```{r}
+flighttypes_df <- main_df1 %>%
+  select(hour) %>%
+  dplyr::mutate(flighttype = ifelse(hour <= 6, "Early Morning", ifelse(hour <= 12, "Late Morning", ifelse(hour <= 18, "Afternoon", "Evening")))) %>%
+  group_by(flighttype) %>%
+  dplyr::summarise(n = length(flighttype), .groups = 'keep') %>%
+  group_by(flighttype) %>%
+  mutate(percent_of_total = round(n*100/sum(n),1)) %>%
+  ungroup %>%
+  data.frame()
+
+plot_ly(flighttypes_df, labels = ~flighttype, values = ~n) %>%
+  add_pie(hole=0.6) %>%
+  layout(title="Total Delays of Flights by Time of Day") %>%
+  layout(annotations=list(text=paste0("Total Flight Delay Count: \n", 
+                                      scales::comma(sum(flighttypes_df$n))), 
+                          "showarrow"=F))
+```
+
+#### 1.2 Analysis of the best day of the week for the airlines to fly to minimise delays
+
+I create a dataframe "DayOfWeek" for analyzing Q1.2.
+```{r}
+DayOfWeek <- data.frame(dplyr::count(main_df1, DayOfWeek))
+DayOfWeek <- DayOfWeek[order(DayOfWeek$n, decreasing = TRUE), ]
+```
+
+I use ggplot() function and create a bar chart for visualizing the Number of Flight Delays by day of the week.
+```{r}
+ggplot(DayOfWeek, aes(x = reorder(DayOfWeek, n), y = n)) + 
+  geom_bar(colour="white", fill="orange", stat="identity") + 
+  geom_text(aes(label=scales::comma(n)), vjust=-0.1, hjust=0.45, color='black') +
+  labs(title = "Number of Flight Delays by Day of Week (2003-2004) ", x = "Day Of Week", y = "Number of Delays") + 
+  scale_y_continuous(labels=comma) + 
+  coord_flip() + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+#### 1.3 Analysis of the best day of month for the airlines to fly to minimise delays
+
+I create a dataframe "Month" for analyzing Q1.3.
+I use ggplot() function and create another bar chart for visualizing the Number of Flight Delays by day of month.
+```{r}
+Month <- data.frame(dplyr::count(main_df1, Month))
+Month <- Month[order(Month$n, decreasing = TRUE), ]
+
+ggplot(Month, aes(x = reorder(Month, n), y = n)) + 
+  geom_bar(colour="white", fill="red", stat="identity") + 
+  geom_text(aes(label=scales::comma(n)), vjust=-0.1, hjust=0.45, color='black') +
+  labs(title = "Number of Flight Delays by Month (2003-2004)", x = "Month", y = "Number of Delays") + 
+  scale_y_continuous(labels=comma) + 
+  coord_flip() + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+It's clear to find that September is the best month to fly which can minimise the delays. Hence, let's analyse each day of September to find the best day of the year for minimising delays
+```{r}
+#September
+Bestday <- filter(main_df1, Month == 9)
+
+
+DayofMonth <- data.frame(dplyr::count(Bestday, DayofMonth))
+DayofMonth <- DayofMonth[order(DayofMonth$n, decreasing = TRUE), ]
+
+ggplot(DayofMonth, aes(x = reorder(DayofMonth, n), y = n)) + 
+  geom_bar(colour="white", fill="red", stat="identity") + 
+  geom_text(aes(label=scales::comma(n)), vjust=-0.1, hjust=0.45, color='black') +
+  labs(title = "Number of Flight Delays by Each Day of September", x = "Day of September", y = "Number of Delays") + 
+  scale_y_continuous(labels=comma) + 
+  coord_flip() + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### 2. Do older planes suffer more delays
+
+Dataframe "planes_df" is created for analysis.
+```{r}
+planes_df <- main_df
+  planes_df$Age <- planes_df$Year - as.numeric(planes_df$year)
+```
+Overview of the DepDelay by age of the flights.
+```{r}
+planes_df <- planes_df %>%
+  group_by(Age) %>%
+  summarise_at(vars(DepDelay), funs(mean(., na.rm=TRUE)))
+planes_df <- planes_df[-c(1,2,51,52,53),] ### omit unrealistic variables
+View(planes_df)
+```
+
+I use ggplot() function and create a line chart for visualizing the Trend in flight delays with flights age increase. The conclusion is that planes delay is same for older and newer planes.
+```{r, fig.width=14,fig.height=5}
+line<-ggplot(data=planes_df, aes(x=Age, y=DepDelay, group=1)) +
+  geom_line(color="blue",size=1)+
+  geom_point()
+line+ggtitle("Trend in flight delays with flights age increase")+
+  labs(x="Flight Age",y="Mean of the DepDelay")
+```
+
+### 3. Analysis of the number of people flying between different locations over time
+
+Dataframe "loc_df" is created for analysis.
+```{r}
+loc_df<-main_df[!(main_df$CancellationCode== 1 | main_df$Diverted== 1),]
+```
+
+```{r}
+#remove rows from data frame with NA values in column 'Origin' & 'Dest'
+loc_df<-loc_df[!is.na(loc_df$Origin),]
+loc_df<-loc_df[!is.na(loc_df$Dest),]
+```
+
+To analyse the number of people flying between different locations over time, we can view the number of people as the number of planes. My aim is to compare top 50 number of the flights flying between locations over the period by year as well as by each day of the week. 
+
+Overview the total number of flights fly between different locations over the year. 
+```{r}
+loc_df1<-loc_df %>%
+  count(Year,Origin, Dest, sort = TRUE)
+loc_df1
+```
+Constructing heatmaps for visualizing the results.
+```{r}
+loc_rank2003 <- tibble::as_tibble(loc_df1) %>% 
+ # desc orders from largest to smallest
+  group_by() %>%
+  arrange(desc(n))
+loc_rank2003 <- loc_rank2003[loc_rank2003$Year == '2003',]%>%
+  top_n(10,n)
+#loc_rank2003
+
+loc_rank2004 <- tibble::as_tibble(loc_df1) %>% 
+ # desc orders from largest to smallest
+  group_by() %>%
+  arrange(desc(n))
+loc_rank2004 <- loc_rank2004[loc_rank2004$Year == '2004',]%>%
+  top_n(10,n)
+#loc_rank2004
+```
+
+```{r,fig.width=8,fig.height=5}
+Heatmap1 <- ggplot(loc_rank2003, aes(Origin, Dest, fill= n)) + 
+  geom_tile()
+Heatmap1+ggtitle("Top 10 data by number of flights between two locations in 2003")
+
+Heatmap2 <- ggplot(loc_rank2004, aes(Origin, Dest, fill= n)) + 
+  geom_tile()
+Heatmap2+ggtitle("Top 10 data by number of flights between two locations in 2004")
+```
+
+Overview the total number of flights fly between different locations by different day of the week.
+```{r}
+loc_df2<-loc_df %>%
+  count(DayOfWeek,Origin, Dest, sort = TRUE)
+loc_df2
+```
+Create 7 heatmaps for each day of the week fr analyzing the total number of flights between locations within year 2003 to 2004. 
+```{r}
+loc_rank1 <- tibble::as_tibble(loc_df2) %>% 
+ # desc orders from largest to smallest
+  group_by() %>%
+  arrange(desc(n))
+loc_rank1 <- loc_rank1[loc_rank1$DayOfWeek == '1',]%>%
+  top_n(50,n)
+
+loc_rank2 <- tibble::as_tibble(loc_df2) %>% 
+ # desc orders from largest to smallest
+  group_by() %>%
+  arrange(desc(n))
+loc_rank2 <- loc_rank2[loc_rank2$DayOfWeek == '2',]%>%
+  top_n(50,n)
+
+loc_rank3 <- tibble::as_tibble(loc_df2) %>% 
+ # desc orders from largest to smallest
+  group_by() %>%
+  arrange(desc(n))
+loc_rank3 <- loc_rank3[loc_rank3$DayOfWeek == '3',]%>%
+  top_n(50,n)
+
+loc_rank4 <- tibble::as_tibble(loc_df2) %>% 
+ # desc orders from largest to smallest
+  group_by() %>%
+  arrange(desc(n))
+loc_rank4 <- loc_rank4[loc_rank4$DayOfWeek == '4',]%>%
+  top_n(50,n)
+
+loc_rank5 <- tibble::as_tibble(loc_df2) %>% 
+ # desc orders from largest to smallest
+  group_by() %>%
+  arrange(desc(n))
+loc_rank5 <- loc_rank5[loc_rank5$DayOfWeek == '5',]%>%
+  top_n(50,n)
+
+loc_rank6 <- tibble::as_tibble(loc_df2) %>% 
+ # desc orders from largest to smallest
+  group_by() %>%
+  arrange(desc(n))
+loc_rank6 <- loc_rank6[loc_rank6$DayOfWeek == '6',]%>%
+  top_n(50,n)
+
+loc_rank7 <- tibble::as_tibble(loc_df2) %>% 
+ # desc orders from largest to smallest
+  group_by() %>%
+  arrange(desc(n))
+loc_rank7 <- loc_rank7[loc_rank7$DayOfWeek == '7',]%>%
+  top_n(50,n)
+```
+
+```{r,fig.width=9,fig.height=6}
+Heatmapweek1 <- ggplot(loc_rank1, aes(Origin, Dest, fill= n)) + 
+  geom_tile()
+Heatmapweek1+ggtitle("Top 50 data by number of flights between two locations on Monday")
+
+Heatmapweek2 <- ggplot(loc_rank2, aes(Origin, Dest, fill= n)) + 
+  geom_tile()
+Heatmapweek2+ggtitle("Top 50 data by number of flights between two locations on Tuesday")
+
+Heatmapweek3 <- ggplot(loc_rank3, aes(Origin, Dest, fill= n)) + 
+  geom_tile()
+Heatmapweek3+ggtitle("Top 50 data by number of flights between two locations on Wednesday")
+
+Heatmapweek4 <- ggplot(loc_rank4, aes(Origin, Dest, fill= n)) + 
+  geom_tile()
+Heatmapweek4+ggtitle("Top 50 data by number of flights between two locations on Thursday")
+
+Heatmapweek5 <- ggplot(loc_rank5, aes(Origin, Dest, fill= n)) + 
+  geom_tile()
+Heatmapweek5+ggtitle("Top 50 data by number of flights between two locations on Friday")
+
+Heatmapweek6 <- ggplot(loc_rank6, aes(Origin, Dest, fill= n)) + 
+  geom_tile()
+Heatmapweek6+ggtitle("Top 50 data by number of flights between two locations on Saturday")
+
+Heatmapweek7 <- ggplot(loc_rank7, aes(Origin, Dest, fill= n)) + 
+  geom_tile()
+Heatmapweek7+ggtitle("Top 50 data by number of flights between two locations on Sunday")
+```
+
+### 4. Analysis of the cascading failures as delays in one airport create delays in others
+
+Dataframe "caf" is created for analysis.
+```{r}
+caf <- main_df %>%
+  select(airport,lat,long,Origin,Dest,UniqueCarrier,TailNum,LateAircraftDelay,Year,Month,DayofMonth,DayOfWeek,DepTime,DepDelay,ArrTime,ArrDelay)
+caf <- na.omit(caf)
+caf <- caf[caf$LateAircraftDelay != 0, ]
+caf <- caf[caf$TailNum != 0, ]
+```
+
+```{r}
+caf_df_map <- caf[caf$Year == '2003' & caf$Month == '12' & caf$DayofMonth == '12',]
+caf_df_map
+```
+```{r}
+caf_df_map <- filter(caf_df_map, lat < 48.5)
+caf_df_map <- filter(caf_df_map, long > -130)
+caf_df_map <- filter(caf_df_map, Origin!="TVC") #filter out TVC
+TVC <- filter(airports, iata=="TVC") #separate df for TVC
+```
+
+```{r,fig.width=10,fig.height=7}
+xlim <- c()
+ylim <- c()
+
+# setting of color
+pal <- colorRampPalette(c("#333333", "white", "#1292db"))
+colors <- pal(100)
+
+#Plotting on the map
+map("usa", col="#6B6363", fill=TRUE, bg="#000000", lwd=0.05, xlim=xlim, ylim=ylim)
+
+points(caf_df_map$long,caf_df_map$lat, pch=3, cex=0.1, col="chocolate1")
+
+for (i in (1:dim(caf_df_map)[1])) { 
+inter <- gcIntermediate(c(TVC$lon[1], TVC$lat[1]), c(caf_df_map$lon[i], caf_df_map$lat[i]), n=200)
+lines(inter, lwd=0.1, col="turquoise")
+}
+```
+
+To analyse the cascading failures, I choose the flight that the tailnum is N612MQ as an example. 
+And by viewing its flight details within a particular period, I can find the delays as a result of the cascading failures created by other airports.
+```{r}
+# Let's take flight with TailNum 'N612MQ' as an example
+caf_df <- caf[caf$TailNum == 'N612MQ' & caf$Year == '2003' & caf$Month == '12'& caf$DayofMonth == '12',]
+caf_df <- caf_df[order(caf_df$DepTime),]
+caf_df <- caf_df %>%
+  select(Year,Month,DayofMonth,DayOfWeek,TailNum,airport,Origin,Dest,DepTime,DepDelay,ArrTime,ArrDelay,LateAircraftDelay)
+caf_df
+```
+
+
+
+### 5. Construct a model to predict delays
+
+Preparation
+```{r}
+model <- main_df[!is.na(main_df$ArrDelay) & !is.na(main_df$DepDelay),]
+model <- model %>% 
+    mutate(If_Delayed_Dep = case_when(
+        DepDelay > 0 ~ "1", #1=Yes,delayed
+        DepDelay <= 0 ~ "0", #0=No,not delay
+    ))
+model <- model %>% 
+    mutate(If_Delayed_Arr = case_when(
+        ArrDelay > 0 ~ "1", #1=Yes,delayed
+        ArrDelay <= 0 ~ "0", #0=No,not delay
+    ))
+model
+```
+Modelling
+```{r}
+library(caret)
+library(lattice)
+```
+
+```{r}
+#Training the data
+
+set.seed(13) 
+
+# Select the column will be used in the algorithm training
+feature<- c("If_Delayed_Arr", "ArrDelay", "DayOfWeek", "UniqueCarrier", "Dest","Origin","CRSDepTime")
+
+model_sorted <- model[,feature] 
+
+# Select data for training
+training_index <- createDataPartition(model_sorted$If_Delayed_Arr, p=0.75, list=FALSE)
+
+# Create train & test dataset
+data_training <- model_sorted[training_index,] 
+data_testing <- model_sorted[training_index,] 
+```
+
+
+The evaluation and result of the model
+(1) Logistic Regression model
+```{r}
+logReg <- train(If_Delayed_Arr ~ ., data = data_training, method = "glm", family = "binomial",
+                     trControl=trainControl(method = "cv", number = 5, repeats = 5))
+```
+
+```{r}
+# Predict
+logReg_predict <- predict(logReg, data_testing)
+
+# Confusion the matrix 
+conmatrix_reg <- confusionMatrix(logReg_predict, data_testing[,"If_Delayed_Arr"])
+conmatrix_reg
+```
+
+
+(2) Random Forest algorithm
+```{r}
+library(randomForest) 
+
+randomforest <- randomForest(data_training[-1], data_training$If_Delayed_Arr, proximity = TRUE, importance = TRUE)
+randomforest
+randomforest_validation <- predict(randomforest, data_testing)
+
+# Confusion the matrix 
+conmatrix_rf <- confusionMatrix(randomforest_validatio, data_testing[,"If_Delayed_Arr"])
+conmatrix_rf
+```
+
+
