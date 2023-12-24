@@ -1,7 +1,5 @@
-# Sales-Data-Analysis-for-Superstore-in-EMEA-Market
-Project Date: Mar 2023
+# Data analysis for the USA commercial flights from 2003 to 2004
+Project Date: Apr 2022
 Individual Project / Grade A
-●	Collected a comprehensive dataset containing information on orders, products, sales, and profits from January 2018 to December 2021;
-●	Utilized Tableau to perform data visualization analysis on the Superstore dataset; 
-●	Analyzed sales and profits, profitability and capability of the products, customer segments and shipping conditions; 
-●	Compiled all the information into a more than 1500-word report.
+
+●	Collected Used R and Python to perform the data mining, data cleaning, data processing and data analysis; Compiled all the information into a comprehensive report.
