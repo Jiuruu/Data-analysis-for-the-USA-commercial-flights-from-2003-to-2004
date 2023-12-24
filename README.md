@@ -1,6 +1,7 @@
 # Data analysis for the USA commercial flights from 2003 to 2004
 Project Date: Apr 2022
 Individual Project / Grade A
+
 ●	Collected Used R and Python to perform the data mining, data cleaning, data processing and data analysis; Compiled all the information into a comprehensive report.
 
 In recent years, frequent delays and congestion have become commonplace for air travelers. Air traffic has become overly concentrated at relatively few airports, especially at certain times of day, at a cost to airlines, passengers and the U.S. economy. In the following sections, I present a Flight Analysis to show the analysis of flight delays, Aircraft passenger flow analysis, cascading failures of airports, as well as models to predict flights delays. This paper uses data from the Harvard Dataverse to present its findings (https://doi.org/10.7910/DVN/HG7NV7). 
